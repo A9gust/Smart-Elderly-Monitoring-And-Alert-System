@@ -8,6 +8,7 @@ import random
 from VSVIG.testt import seizure_detection
 from fall_detection import fall_detection
 from werkzeug.utils import secure_filename
+from VSVIG.static_detection import extract_keyframes, static_pose_detection_from_keyframes
 
 app = Flask(__name__, static_folder='static')
 UPLOAD_FOLDER = 'static/uploads'
@@ -106,6 +107,27 @@ def trigger_fall_log():
     detection = fall_detection()  # Simulating 10 seconds of data
 
     return jsonify(success=True, detection=detection)
+
+@app.route('/trigger_static_log', methods=['POST'])
+def trigger_static_log():
+    data = request.json
+    filename = data.get('filename')
+    video_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+
+    # Run your static detection logic
+    keyframe_indices, keyframe_images = extract_keyframes(video_path)
+    static_idxs = static_pose_detection_from_keyframes(keyframe_images)
+
+    # Convert to JSON-safe output (e.g., just send timestamps)
+    fps = 30  # or extract from the video if needed
+    logs = []
+    for idx in static_idxs:
+        sec = idx // fps
+        timestamp = f"{sec // 60:02d}:{sec % 60:02d}"
+        logs.append(timestamp)
+
+    return jsonify(success=True, detection=logs)
+
 
 if __name__ == '__main__':
     app.run(debug=True)

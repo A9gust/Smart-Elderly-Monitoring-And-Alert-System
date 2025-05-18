@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Fall Detection System</title>
+    <title>Smart Detection System</title>
     <style>
         body {
             background-color: #e6f0fa;
@@ -138,7 +138,7 @@
     </style>
 </head>
 <body>
-    <h1>Fall Detection System</h1>
+    <h1>Smart Detection System</h1>
     <!-- Main container: split layout -->
     <div style="display: flex; gap: 40px; justify-content: center; align-items: flex-start; width: 90%; max-width: 1600px;">
         
@@ -153,7 +153,7 @@
             </button>
 
             <video id="preview" controls autoplay muted>
-                <source src="{{ url_for('static', filename='demo.mp4') }}" type="video/mp4">
+                <source src="{{ url_for('static', filename='falldetection.mp4') }}" type="video/mp4">
                 Your browser does not support the video tag.
             </video>
 
@@ -241,7 +241,10 @@
                 fetchSeizureData();
             } else if (videoFilename.includes("fall")) {
                 fetchFallData();
-            } else {
+            } else if(videoFilename.includes("static")) {
+                fetchStaticData();
+            }
+            else {
                 alert("Unsupported filename. Please name your file with 'A' for seizure or 'B' for fall detection.");
             }
         }
@@ -388,6 +391,52 @@
                 document.getElementById('loading-spinner').style.display = 'none';
             });
         }
+        function fetchStaticData() {
+            const preview = document.getElementById('preview');
+            const videoFilename = preview.src.split('/').pop();
+
+            if (!videoFilename) {
+                alert("Please upload a video first.");
+                return;
+            }
+
+            document.getElementById('loading-spinner').style.display = 'block';
+
+            fetch('/trigger_static_log', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ filename: videoFilename })
+            })
+            .then(response => response.json())
+            .then(data => {
+                const logBox = document.getElementById('log-other');  // the 3rd log panel
+                logBox.innerText = '';
+
+                if (data.success && data.detection.length > 0) {
+                    const now = new Date();
+                    data.detection.forEach(timestamp => {
+                        const [min, sec] = timestamp.split(':').map(Number);
+                        const offsetSec = min * 60 + sec;
+                        const realTime = new Date(now.getTime() + offsetSec * 1000);
+                        const formattedTime = realTime.toLocaleTimeString('en-GB', { hour12: false });
+                        logBox.innerText += `${formattedTime} — Static Pose Detected\n`;
+                    });
+
+                    showPopup("Static Pose Detected!");
+                } else {
+                    logBox.innerText = `No static pose detected.`;
+                }
+
+                document.getElementById('loading-spinner').style.display = 'none';
+            })
+            .catch(error => {
+                console.error("Error fetching static data:", error);
+                document.getElementById('loading-spinner').style.display = 'none';
+            });
+        }
+
         function showPopup(message) {
             const popup = document.getElementById('detection-popup');
             popup.innerText = message;
