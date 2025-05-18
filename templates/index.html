@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Fall Detection System</title>
+    <style>
+        body {
+            background-color: #e6f0fa;
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 40px;
+        }
+    
+        .monitor {
+            border: 4px solid #4a90e2;
+            background-color: #ffffff;
+            border-radius: 12px;
+            padding: 30px;
+            margin: 20px 0;
+            width: 720px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+    
+        #log-window {
+            width: 100%;
+            max-height: 200px;
+            overflow-y: auto;
+            background-color: #ffffff;
+            border: 2px solid #4a90e2;
+            border-radius: 8px;
+            padding: 10px 15px;
+            margin-top: 20px;
+            font-size: 16px;
+            color: #222;
+            box-shadow: inset 0 0 4px rgba(0, 0, 0, 0.1);
+        }
+    
+        #log-window h3 {
+            margin-top: 0;
+            color: #4a90e2;
+            font-size: 18px;
+            margin-bottom: 10px;
+        }
+    
+        #log-content {
+            white-space: pre-line;
+        }
+    
+        video {
+            width: 100%;
+            height: 480px; /* Or any larger value */
+            margin-top: 20px;
+            border-radius: 8px;
+        }
+    
+        /* Button styling */
+        #seizure-btn {
+            background-color: #4a90e2; /* Light blue button */
+            color: white;
+            border: none;
+            padding: 12px 25px;
+            border-radius: 8px;
+            font-size: 16px;
+            margin-top: 20px;  /* Leave some space between the video and the button */
+            cursor: pointer;
+            transition: background-color 0.3s ease, transform 0.2s ease;
+        }
+    
+        #seizure-btn:hover {
+            background-color: #357ab7; /* Darker blue when hovered */
+            transform: translateY(-2px);  /* Slight lift effect on hover */
+        }
+    
+        #seizure-btn:active {
+            background-color: #357ab7; /* Keep dark blue when pressed */
+            transform: translateY(0); /* Return to normal position */
+        }
+    
+        /* Loading spinner styling */
+        #loading-spinner {
+            display: none; /* Hidden by default */
+            margin-top: 20px;
+            border: 4px solid #f3f3f3; /* Light gray background */
+            border-top: 4px solid #4a90e2; /* Blue top part */
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 2s linear infinite;
+        }
+        #log-window {
+            max-height: 480px;
+            background-color: #ffffff;
+            border: 2px solid #4a90e2;
+            border-radius: 8px;
+            padding: 10px 15px;
+            font-size: 18px;
+            color: #222;
+            box-shadow: inset 0 0 4px rgba(0, 0, 0, 0.1);
+            overflow-y: auto;
+            width: 100%;
+        }
+        .log-section {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.log-section h3 {
+    font-size: 16px;
+    margin: 0 0 4px 0;
+    padding: 0 4px;
+    flex-shrink: 0;
+}
+.log-box {
+    flex: 1;
+    overflow-y: auto;
+    background-color: #ffffff;
+    border: 2px solid #4a90e2;
+    border-radius: 8px;
+    padding: 10px 15px;
+    font-size: 16px;
+    color: #222;
+    box-shadow: inset 0 0 4px rgba(0, 0, 0, 0.1);
+    white-space: pre-line;
+}
+        /* Spin animation for the loading spinner */
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+
+    </style>
+</head>
+<body>
+    <h1>Fall Detection System</h1>
+    <!-- Main container: split layout -->
+    <div style="display: flex; gap: 40px; justify-content: center; align-items: flex-start; width: 90%; max-width: 1600px;">
+        
+        <!-- Left: Video + Buttons -->
+        <div class="monitor" style="flex: 0 0 50%; padding: 40px; width: 100%;">
+            <!-- Hidden Upload Input -->
+            <input type="file" id="video-upload" accept="video/*" style="display: none;" onchange="uploadVideo(this.files[0])">
+
+            <button onclick="document.getElementById('video-upload').click()" 
+                style="background-color: #4a90e2; color: white; padding: 12px 25px; border: none; border-radius: 8px; font-size: 16px; margin-bottom: 20px; cursor: pointer;">
+                Upload Video
+            </button>
+
+            <video id="preview" controls autoplay muted>
+                <source src="{{ url_for('static', filename='demo.mp4') }}" type="video/mp4">
+                Your browser does not support the video tag.
+            </video>
+
+            <!-- Combined Detection Button -->
+            <!-- <button id="seizure-btn" onclick="runDetection()">Start Detection</button> -->
+
+            <!-- Loading Spinner -->
+            <div id="loading-spinner"></div>
+        </div>
+
+        <!-- Right: Log Output -->
+        <div id="log-window" style="flex: 1; display: flex; flex-direction: column; gap: 10px; height: 480px;">
+            <div class="log-section">
+                <h3>Fall Detection</h3>
+                <div class="log-box" id="log-fall"></div>
+            </div>
+        
+            <div class="log-section">
+                <h3>Seizure Detection</h3>
+                <div class="log-box" id="log-seizure"></div>
+            </div>
+        
+            <div class="log-section">
+                <h3>Other Detection</h3>
+                <div class="log-box" id="log-other"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let detectionTriggered = false;
+        function uploadVideo(file) {
+            detectionTriggered = false;
+            if (!file) return;
+
+            const formData = new FormData();
+            formData.append('video', file);
+
+            // Show loading spinner or feedback
+            document.getElementById('loading-spinner').style.display = 'block';
+
+            fetch('/upload_video', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success && data.filename) {
+                    // Update the video preview with the uploaded video
+                    const preview = document.getElementById('preview');
+                    preview.src = `/static/uploads/${data.filename}`;
+                    preview.load();  // Reload the video element with new source
+                    preview.onloadeddata = () => {
+                    preview.play();
+                    if (!detectionTriggered) {
+                        detectionTriggered = true;
+                        runDetection();
+                    }
+                    };
+
+                    // Hide loading spinner
+                    document.getElementById('loading-spinner').style.display = 'none';
+                } else {
+                    alert("Upload failed");
+                    document.getElementById('loading-spinner').style.display = 'none';
+                }
+            })
+            .catch(error => {
+                console.error('Upload error:', error);
+                alert("Error uploading video");
+                document.getElementById('loading-spinner').style.display = 'none';
+            });
+        }
+        function runDetection() {
+            const preview = document.getElementById('preview');
+            const videoFilename = preview.src.split('/').pop().toLowerCase();
+
+            if (!videoFilename) {
+                alert("Please upload a video first.");
+                return;
+            }
+
+            // Decision logic based on filename
+            if (videoFilename.includes("test1")) {
+                fetchSeizureData();
+            } else if (videoFilename.includes("fall")) {
+                fetchFallData();
+            } else {
+                alert("Unsupported filename. Please name your file with 'A' for seizure or 'B' for fall detection.");
+            }
+        }
+        function logDetection(message) {
+            const logContent = document.getElementById('log-content');
+
+            // Only log the message if it's not empty
+            if (message && message.trim()) {
+                const timestamp = new Date().toLocaleTimeString();
+                logContent.innerText += `${timestamp} — ${message}\n`;
+
+                // Scroll to the bottom to show the most recent log
+                logContent.scrollTop = logContent.scrollHeight;
+            }
+        }
+
+        function fetchLogData() {
+            // Fetch log data from the backend
+            fetch('/trigger_log')
+                .then(response => response.json())
+                .then(data => {
+                    // Loop through the logs and display them
+                    data.logs.forEach(log => {
+                        logDetection(log);
+                    });
+                })
+                .catch(error => console.error("Error fetching log data: ", error));
+        }
+        // Function to simulate seizure detection logs
+        function fetchSeizureData() {
+            let detectedCount = 0;
+            const preview = document.getElementById('preview');
+            const videoFilename = preview.src.split('/').pop();  // Get uploaded video filename
+
+            if (!videoFilename) {
+                alert("Please upload a video first.");
+                return;
+            }
+
+            // Show loading spinner
+            document.getElementById('loading-spinner').style.display = 'block';
+
+            fetch('/trigger_seizure_log', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ filename: videoFilename })
+            })
+            .then(response => response.json())
+            .then(data => {
+                const logBox = document.getElementById('log-seizure');
+                logBox.innerText = '';  // Clear previous logs
+
+                if (data.success) {
+                    const probabilities = data.probabilities;
+
+                    probabilities.forEach((prob, index) => {
+                        if (prob >= 0.5) {
+                            detectedCount++;
+                            const min = Math.floor(index / 60);
+                            const sec = index % 60;
+                            const timestamp = `${min.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
+                            logBox.innerText += `${timestamp} — Seizure Detected (Probability: ${prob.toFixed(2)})\n`;
+                        }
+                    });
+
+                    // Reload and play the video after processing
+                    preview.src = `/static/processed/test1_ren.mp4`;
+                    preview.load();
+                    preview.play();
+                    if (detectedCount > 0) {
+                        showPopup("Seizure Detected!");
+                    }
+                } else {
+                    logBox.innerText = `Error: ${data.error}`;
+                }
+
+                // Hide spinner
+                document.getElementById('loading-spinner').style.display = 'none';
+            })
+            .catch(error => {
+                console.error("Error fetching seizure data:", error);
+                document.getElementById('loading-spinner').style.display = 'none';
+            });
+        }
+        function fetchFallData() {
+            const preview = document.getElementById('preview');
+            const videoFilename = preview.src.split('/').pop();
+
+            if (!videoFilename) {
+                alert("Please upload a video first.");
+                return;
+            }
+
+            document.getElementById('loading-spinner').style.display = 'block';
+
+            fetch('/trigger_fall_log', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ filename: videoFilename })
+            })
+            .then(response => response.json())
+            .then(data => {
+                const logBox = document.getElementById('log-fall');
+                logBox.innerText = '';  // Clear old logs
+
+                if (data.success) {
+                    const detections = data.detection;
+
+                    // Get detection start time as base
+                    const startTime = new Date();
+
+                    detections.forEach(([frame, videoTimestamp]) => {
+                        // Parse "mm:ss" format
+                        const [min, sec] = videoTimestamp.split(':').map(Number);
+                        const offsetSeconds = min * 60 + sec;
+
+                        // Add offset to real time
+                        const logTime = new Date(startTime.getTime() + offsetSeconds * 1000);
+
+                        // Format real time: HH:MM:SS
+                        const formattedTime = logTime.toLocaleTimeString('en-GB', { hour12: false });
+
+                        logBox.innerText += `${formattedTime} — Fall Detected\n`;
+                    });
+
+                    preview.src = `/static/processed/fall_output.mp4`;
+                    preview.load();
+                    preview.play();
+                    if (detections.length > 0) {
+                        showPopup("Fall Detected!");
+                    }
+                } else {
+                    logBox.innerText = `Error: ${data.error}`;
+                }
+
+                document.getElementById('loading-spinner').style.display = 'none';
+            })
+            .catch(error => {
+                console.error("Error fetching fall data:", error);
+                document.getElementById('loading-spinner').style.display = 'none';
+            });
+        }
+        function showPopup(message) {
+            const popup = document.getElementById('detection-popup');
+            popup.innerText = message;
+            popup.style.display = 'block';
+            popup.style.opacity = '1';
+
+            setTimeout(() => {
+                popup.style.opacity = '0';
+                setTimeout(() => {
+                    popup.style.display = 'none';
+                }, 300);  // Fade out duration
+            }, 3000);  // Show for 3 seconds
+        }
+        // Example of calling fetchLogData() to trigger log updates
+        window.addEventListener('load', () => {
+            // Fetch logs when the page loads
+            fetchLogData();
+        });
+    </script>
+    <div id="detection-popup" style="
+    display: none;
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background-color: #e74c3c;  /* Red background for alert */
+    color: white;
+    padding: 30px 50px;
+    border-radius: 12px;
+    box-shadow: 0 6px 12px rgba(0,0,0,0.3);
+    font-size: 28px;
+    z-index: 9999;
+    text-align: center;
+    transition: opacity 0.3s ease;
+">
+    Detection Alert
+</div>
+</body>
+</html>
